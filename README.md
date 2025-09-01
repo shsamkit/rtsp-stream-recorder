@@ -116,20 +116,6 @@ docker run -v /path/to/output:/app/data rtsp-streamer \
 ```
 
 ## Output Structure
-
-### Single Stream Per Camera
-```
-output_directory/
-├── camera_1.mp4
-├── camera_2.mp4
-├── camera_3.mp4
-└── logs/
-    ├── camera_1.log
-    ├── camera_2.log
-    └── camera_3.log
-```
-
-### Multiple Streams Per Camera
 ```
 output_directory/
 ├── camera_1_stream1.mp4
