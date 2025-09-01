@@ -1,0 +1,4 @@
+---
+cameras:
+  - "rtsp://root:PASSWORD@127.0.0.1:5544/axis-media/media.amp"
+  - "rtsp://root:PASSWORD@127.0.0.1:5545/axis-media/media.amp"
