@@ -5,7 +5,7 @@ A Docker-based RTSP streaming solution that uses FFmpeg to record multiple camer
 ## Quick Start
 ```
 # Check out the repo and build a docker image
-docker build . -t urtsp-streamer-recorder --platform  linux/amd64
+docker build . -t rtsp-streamer-recorder --platform  linux/amd64
 
 # make a data directory for the recordings and logs
 mkdir -p /tmp/rtsp-streamer
