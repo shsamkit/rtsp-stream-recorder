@@ -4,21 +4,25 @@ A Docker-based RTSP streaming solution that uses FFmpeg to record multiple camer
 
 ## Quick Start
 ```
+# Check out the repo and build a docker image
+docker build . -t urtsp-streamer-recorder --platform  linux/amd64
+
 # make a data directory for the recordings and logs
 mkdir -p /tmp/rtsp-streamer
 
 # Prepare camera urls with credentials and camera IPs; if IPs aren't directly accessible, consider using port forwarding
 # Sample URL for hikvision cameras
-RTSP_URL=rtsp://${CAMERA_IP}:554/Streaming/channels/101
+RTSP_URL=rtsp://${CAMERA_IP}:554/ISAPI/Streaming/channels/101
 
 # Sample command for port-forwarding
 ssh -L 5544:${CAMERA_IP}:554 $JUMP_SERVER
 
-# Run the streamer
-docker run --add-host=host.docker.internal:host-gateway \                                                                            
+# Run the streamer (you may skip --add-host arg if not connecting to cameras via port-forwarding)
+docker run --add-host=host.docker.internal:host-gateway \
 --name rtsp-streamer --rm \
 -v /tmp/rtsp-streamer:/app/data \
-us-west1-docker.pkg.dev/app-dev-and-ci/standard-ai-public/rtsp-streamer:v1.0.0 \
+rtsp-streamer-recorder \
+-l info \
 -o /app/data \
 -d 60 \
 -c ${RTSP_URL} \
@@ -214,3 +218,4 @@ When using multiple streams per camera:
 - Ensure your network can handle the increased bandwidth
 - Some cameras have limits on concurrent connections
 - Monitor system resources (CPU, memory, disk I/O)
+
