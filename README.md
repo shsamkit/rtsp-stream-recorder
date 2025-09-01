@@ -11,8 +11,8 @@ docker build . -t urtsp-streamer-recorder --platform  linux/amd64
 mkdir -p /tmp/rtsp-streamer
 
 # Prepare camera urls with credentials and camera IPs; if IPs aren't directly accessible, consider using port forwarding
-# Sample URL for hikvision cameras
-RTSP_URL=rtsp://${CAMERA_IP}:554/ISAPI/Streaming/channels/101
+# Sample URL for hikvision cameras, you may pass mutiple comma-separated camera URLs
+RTSP_URLS=rtsp://${CAMERA_IP}:554/ISAPI/Streaming/channels/101
 
 # Sample command for port-forwarding
 ssh -L 5544:${CAMERA_IP}:554 $JUMP_SERVER
@@ -25,42 +25,15 @@ rtsp-streamer-recorder \
 -l info \
 -o /app/data \
 -d 60 \
--c ${RTSP_URL} \
+-c ${RTSP_URLS} \
 -s 1
 
 # Wait for the streaming to finish
-```
-
-
-## Development
-
-### Build the Image
-
-```bash
-docker build -t rtsp-streamer .
-```
-
-### Basic Usage
-
-```bash
-# Stream from inline camera list
-docker run -v /path/to/output:/app/data rtsp-streamer \
-  -d 60 \
-  -o /app/data \
-  -c 'rtsp://camera1:554/stream,rtsp://camera2:554/stream'
-
-# Stream from configuration file
-docker run -v /path/to/output:/app/data -v /path/to/config:/app/config.yaml rtsp-streamer \
-  -d 120 \
-  -o /app/data \
-  -f /app/config.yaml
-
-# Multiple streams per camera
-docker run -v /path/to/output:/app/data rtsp-streamer \
-  -c 'rtsp://camera1:554/stream' \
-  -s 3 \
-  -d 60 \
-  -o /app/data
+# Recording and logs should be availbale as follows
+ls -la /tmp/rtsp-streamer
+├── camera_1_stream1.mp4
+└── logs/
+    ├── camera_1_stream1.log
 ```
 
 ## Configuration
@@ -94,6 +67,52 @@ Specify cameras directly on the command line:
 
 ```bash
 -c 'rtsp://camera1:554/stream,rtsp://camera2:554/stream,rtsp://camera3:554/stream'
+```
+
+## Output Structure
+Sample output for 2 cameras with 2 streams
+```
+output_directory/
+├── camera_1_stream1.mp4
+├── camera_1_stream2.mp4
+├── camera_2_stream1.mp4
+├── camera_2_stream2.mp4
+└── logs/
+    ├── camera_1_stream1.log
+    ├── camera_1_stream2.log
+    ├── camera_2_stream1.log
+    └── camera_2_stream2.log
+```
+
+## Development
+
+### Build the Image
+
+```bash
+docker build -t rtsp-streamer .
+```
+
+### Basic Usage
+
+```bash
+# Stream from inline camera list
+docker run -v /path/to/output:/app/data rtsp-streamer \
+  -d 60 \
+  -o /app/data \
+  -c 'rtsp://camera1:554/stream,rtsp://camera2:554/stream'
+
+# Stream from configuration file
+docker run -v /path/to/output:/app/data -v /path/to/config:/app/config.yaml rtsp-streamer \
+  -d 120 \
+  -o /app/data \
+  -f /app/config.yaml
+
+# Multiple streams per camera
+docker run -v /path/to/output:/app/data rtsp-streamer \
+  -c 'rtsp://camera1:554/stream' \
+  -s 3 \
+  -d 60 \
+  -o /app/data
 ```
 
 ## Output Structure
