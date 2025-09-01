@@ -14,8 +14,10 @@ mkdir -p /tmp/rtsp-streamer
 # Sample URL for hikvision cameras, you may pass mutiple comma-separated camera URLs
 RTSP_URLS=rtsp://${CAMERA_IP}:554/ISAPI/Streaming/channels/101
 
-# Sample command for port-forwarding
+# Sample command for port-forwarding, skip if not port-forwarding
 ssh -L 5544:${CAMERA_IP}:554 $JUMP_SERVER
+RTSP_URLS=rtsp://localhost:5544/ISAPI/Streaming/channels/101
+
 
 # Run the streamer (you may skip --add-host arg if not connecting to cameras via port-forwarding)
 docker run --add-host=host.docker.internal:host-gateway \
