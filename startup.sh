@@ -62,12 +62,12 @@ stream_camera() {
 
     if wait $pid; then
         echo "✅ $filename completed successfully"
-        echo "$camera_url" >> "${results_dir}/successful.txt"
+        echo "$filename : $camera_url" >> "${results_dir}/successful.txt"
         return 0
     else
         local exit_code=$?
         echo "❌ $filename failed with exit code $exit_code, wait for other streams to complete"
-        echo "$camera_url" >> "${results_dir}/failed.txt"
+        echo "$filename : $camera_url" >> "${results_dir}/failed.txt"
         return $exit_code
     fi
 }
@@ -208,8 +208,25 @@ echo ""
 if [ -f "${RESULTS_DIR}/failed.txt" ]; then
     FAILED_COUNT=$(wc -l < "${RESULTS_DIR}/failed.txt")
     echo "Failed streams ($FAILED_COUNT):"
-    while IFS= read -r stream; do
-        echo "  ❌ $stream"
+    while IFS= read -r stream_info; do
+        # Extract filename and camera URL from the stream info
+        filename=$(echo "$stream_info" | cut -d' ' -f1)
+        camera_url=$(echo "$stream_info" | cut -d' ' -f3-)
+        echo "  ❌ $stream_info"
+        
+        # Print the log file content for this failed stream
+        log_file="${OUTPUT_DIR}/logs/${filename}.log"
+        if [ -f "$log_file" ]; then
+            echo "    Log file content:"
+            echo "    ----------------------------------------"
+            while IFS= read -r log_line; do
+                echo "    $log_line"
+            done < "$log_file"
+            echo "    ----------------------------------------"
+        else
+            echo "    (Log file not found: $log_file)"
+        fi
+        echo ""
     done < "${RESULTS_DIR}/failed.txt"
 else
     echo "Failed streams (0):"
