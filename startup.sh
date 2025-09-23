@@ -44,6 +44,7 @@ stream_camera() {
     local duration="$4"
     local output_dir="$5"
     local log_level="$6"
+    local results_dir="$7"
 
     # Create unique filename for this stream
     local filename="${camera_name}_stream${stream_number}"
@@ -61,10 +62,12 @@ stream_camera() {
 
     if wait $pid; then
         echo "✅ $filename completed successfully"
+        echo "$camera_url" >> "${results_dir}/successful.txt"
         return 0
     else
         local exit_code=$?
         echo "❌ $filename failed with exit code $exit_code, wait for other streams to complete"
+        echo "$camera_url" >> "${results_dir}/failed.txt"
         return $exit_code
     fi
 }
@@ -155,11 +158,9 @@ echo ""
 
 mkdir -p "$OUTPUT_DIR/logs"
 
+# Create temporary directory for results tracking
+RESULTS_DIR=$(mktemp -d)
 echo "Starting streams, logs will be written to ${OUTPUT_DIR}/logs"
-
-# Arrays to store results
-declare -a CAMERA_NAMES
-declare -a EXIT_CODES
 
 counter=1
 for CAMERA in $CAMERA_LIST; do
@@ -171,13 +172,10 @@ for CAMERA in $CAMERA_LIST; do
     CAMERA=$(echo "$CAMERA" | sed -e 's/localhost/host.docker.internal/g' -e 's/127\.0\.0\.1/host.docker.internal/g')
     CAMERA_NAME="camera_${counter}"
 
-    # Store camera name
-    CAMERA_NAMES+=("$CAMERA_NAME")
-
     # Start multiple streams for this camera
     for stream_num in $(seq 1 $STREAMS_PER_CAMERA); do
         # Run stream_camera function asynchronously
-        stream_camera "$CAMERA" "$CAMERA_NAME" "$stream_num" "$DURATION" "$OUTPUT_DIR" "$LOG_LEVEL" &
+        stream_camera "$CAMERA" "$CAMERA_NAME" "$stream_num" "$DURATION" "$OUTPUT_DIR" "$LOG_LEVEL" "$RESULTS_DIR" &
     done
 
     counter=$((counter + 1))
@@ -191,6 +189,38 @@ echo "Waiting for all streams to complete..."
 wait
 
 echo ""
+echo "****************SUMMARY************************"
+
+# Count and display successful streams
+if [ -f "${RESULTS_DIR}/successful.txt" ]; then
+    SUCCESSFUL_COUNT=$(wc -l < "${RESULTS_DIR}/successful.txt")
+    echo "Successful streams ($SUCCESSFUL_COUNT):"
+    while IFS= read -r stream; do
+        echo "  ✅ $stream"
+    done < "${RESULTS_DIR}/successful.txt"
+else
+    echo "Successful streams (0):"
+    echo "  None"
+fi
+
+echo ""
+# Count and display failed streams
+if [ -f "${RESULTS_DIR}/failed.txt" ]; then
+    FAILED_COUNT=$(wc -l < "${RESULTS_DIR}/failed.txt")
+    echo "Failed streams ($FAILED_COUNT):"
+    while IFS= read -r stream; do
+        echo "  ❌ $stream"
+    done < "${RESULTS_DIR}/failed.txt"
+else
+    echo "Failed streams (0):"
+    echo "  None"
+fi
+echo "************************************************"
+
 echo "All streams have completed, check logs for details for any failed streams"
 echo "Log files are located in: ${OUTPUT_DIR}/logs/"
+
+# Clean up temporary directory
+rm -rf "$RESULTS_DIR"
+
 exit 0
