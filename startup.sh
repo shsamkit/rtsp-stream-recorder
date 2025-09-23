@@ -156,6 +156,7 @@ echo "Output directory: $OUTPUT_DIR"
 echo "Streams per camera: $STREAMS_PER_CAMERA"
 echo ""
 
+rm -rf "$OUTPUT_DIR/logs"
 mkdir -p "$OUTPUT_DIR/logs"
 
 # Create temporary directory for results tracking
