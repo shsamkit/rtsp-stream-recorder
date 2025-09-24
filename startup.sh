@@ -12,6 +12,7 @@ CAMERAS=""
 CAMERAS_FILE=""
 LOG_LEVEL="warning"
 STREAMS_PER_CAMERA=1
+CHUNKS=1
 
 # Function to display usage
 show_usage() {
@@ -27,6 +28,7 @@ show_usage() {
     echo "  -f, --cameras-file FILE   Path to file containing camera URLs (one per line)"
     echo "  -l, --log-level LEVEL     Log level (default: warning)"
     echo "  -s, --streams NUMBER      Number of streams per camera (default: 1)"
+    echo "  --chunks NUMBER           Number of sequential recording chunks (default: 1)"
     echo "  -h, --help               Show this help message"
     echo ""
     echo "Note: Either --cameras or --cameras-file must be specified, but not both"
@@ -34,6 +36,7 @@ show_usage() {
     echo "Examples:"
     echo "  $0 -d 120 -o /data -c 'rtsp://cam1:554/stream,rtsp://cam2:554/stream' -s 3"
     echo "  $0 --duration 300 --output-dir /recordings --cameras-file /config/cameras.txt --streams 2"
+    echo "  $0 -d 600 --chunks 12 --cameras-file cameras.yaml  # 12 sequential 10-minute recordings"
 }
 
 # Function to stream from a single camera
@@ -45,14 +48,15 @@ stream_camera() {
     local output_dir="$5"
     local log_level="$6"
     local results_dir="$7"
+    local chunk_number="$8"
 
     # Create unique filename for this stream
-    local filename="${camera_name}_stream${stream_number}"
+    local filename="${camera_name}_stream${stream_number}_${chunk_number}"
 
     echo "Starting stream $stream_number for $camera_name from $camera_url"
 
     # Start ffmpeg in background
-    nohup ffmpeg -i "$camera_url" -t "$duration" -c copy -loglevel "$log_level" -y "${output_dir}/${filename}.mp4" > "${output_dir}/logs/${filename}.log" 2>&1 &
+    nohup ffmpeg -rtsp_transport tcp -i "$camera_url" -t "$duration" -c copy -loglevel "$log_level" -y "${output_dir}/${filename}.mp4" > "${output_dir}/logs/${filename}.log" 2>&1 &
     local pid=$!
 
     echo "Process ID for $filename: $pid"
@@ -99,6 +103,10 @@ while [[ $# -gt 0 ]]; do
             STREAMS_PER_CAMERA="$2"
             shift 2
             ;;
+        --chunks)
+            CHUNKS="$2"
+            shift 2
+            ;;
         -h|--help)
             show_usage
             exit 0
@@ -130,17 +138,39 @@ if ! [[ "$STREAMS_PER_CAMERA" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
+# Validate chunks
+if ! [[ "$CHUNKS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: Chunks must be a positive integer"
+    exit 1
+fi
+
 # Get camera list
 if [ -n "$CAMERAS" ]; then
     # Convert comma-separated list to newline-separated
     CAMERA_LIST=$(echo "$CAMERAS" | tr ',' '\n')
+    declare -A CAMERA_MAP
+    counter=1
+    for cam in $CAMERA_LIST; do
+        CAMERA_MAP["$counter"]="$cam"
+        counter=$((counter + 1))
+    done
 else
     # Check if cameras file exists
     if [ ! -f "$CAMERAS_FILE" ]; then
         echo "Error: Cameras file not found at $CAMERAS_FILE"
         exit 1
     fi
-    CAMERA_LIST=$(yq '.cameras[]' "$CAMERAS_FILE")
+
+    # Parse YAML file and create associative array
+    declare -A CAMERA_MAP
+    while IFS=: read -r cam_name cam_url; do
+        # Remove leading/trailing whitespace and quotes
+        cam_name=$(echo "$cam_name" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+        cam_url=$(echo "$cam_url" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | sed 's/^["\047]//' | sed 's/["\047]$//')
+        if [[ -n "$cam_name" && -n "$cam_url" ]]; then
+            CAMERA_MAP["$cam_name"]="$cam_url"
+        fi
+    done < <(yq '.cameras | to_entries[] | .key + ":" + .value' "$CAMERAS_FILE")
 fi
 
 # Fail if output directory does not exist
@@ -154,6 +184,7 @@ echo "Starting RTSP streamer with ffmpeg..."
 echo "Duration: ${DURATION}s"
 echo "Output directory: $OUTPUT_DIR"
 echo "Streams per camera: $STREAMS_PER_CAMERA"
+echo "Chunks: $CHUNKS"
 echo ""
 
 rm -rf "$OUTPUT_DIR/logs"
@@ -163,31 +194,43 @@ mkdir -p "$OUTPUT_DIR/logs"
 RESULTS_DIR=$(mktemp -d)
 echo "Starting streams, logs will be written to ${OUTPUT_DIR}/logs"
 
-counter=1
-for CAMERA in $CAMERA_LIST; do
-    # Skip empty lines
-    if [ -z "$CAMERA" ]; then
-        continue
-    fi
+# Loop through each chunk
+for chunk_num in $(seq 1 $CHUNKS); do
+    echo "Starting recording chunk $chunk_num of $CHUNKS..."
 
-    CAMERA=$(echo "$CAMERA" | sed -e 's/localhost/host.docker.internal/g' -e 's/127\.0\.0\.1/host.docker.internal/g')
-    CAMERA_NAME="camera_${counter}"
+    for CAMERA_NAME in "${!CAMERA_MAP[@]}"; do
+        CAMERA_URL="${CAMERA_MAP[$CAMERA_NAME]}"
 
-    # Start multiple streams for this camera
-    for stream_num in $(seq 1 $STREAMS_PER_CAMERA); do
-        # Run stream_camera function asynchronously
-        stream_camera "$CAMERA" "$CAMERA_NAME" "$stream_num" "$DURATION" "$OUTPUT_DIR" "$LOG_LEVEL" "$RESULTS_DIR" &
+        # Skip empty URLs
+        if [ -z "$CAMERA_URL" ]; then
+            continue
+        fi
+
+        CAMERA_URL=$(echo "$CAMERA_URL" | sed -e 's/localhost/host.docker.internal/g' -e 's/127\.0\.0\.1/host.docker.internal/g')
+
+        # Start multiple streams for this camera
+        for stream_num in $(seq 1 $STREAMS_PER_CAMERA); do
+            # Run stream_camera function asynchronously
+            stream_camera "$CAMERA_URL" "cam${CAMERA_NAME}" "$stream_num" "$DURATION" "$OUTPUT_DIR" "$LOG_LEVEL" "$RESULTS_DIR" "$chunk_num" &
+        done
     done
 
-    counter=$((counter + 1))
+    # Wait for all background functions to complete for this chunk
+    echo ""
+    echo "Waiting for all streams in chunk $chunk_num to complete..."
+
+    # Wait for all background processes
+    wait
+
+    echo "Completed chunk $chunk_num of $CHUNKS"
+    echo ""
+
+    # Brief pause between chunks (optional)
+    if [ $chunk_num -lt $CHUNKS ]; then
+        echo "Pausing 5 seconds before next chunk..."
+        sleep 5
+    fi
 done
-
-# Wait for all background functions to complete
-echo ""
-echo "Waiting for all streams to complete..."
-
-# Wait for all background processes
-wait
 
 echo ""
 echo "****************SUMMARY************************"
@@ -214,7 +257,7 @@ if [ -f "${RESULTS_DIR}/failed.txt" ]; then
         filename=$(echo "$stream_info" | cut -d' ' -f1)
         camera_url=$(echo "$stream_info" | cut -d' ' -f3-)
         echo "  ❌ $stream_info"
-        
+
         # Print the log file content for this failed stream
         log_file="${OUTPUT_DIR}/logs/${filename}.log"
         if [ -f "$log_file" ]; then
